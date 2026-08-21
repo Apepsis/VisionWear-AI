@@ -1,92 +1,85 @@
 const canvas = document.getElementById("canvas");
-
 const ctx = canvas.getContext("2d");
-
 
 canvas.width = 720;
 canvas.height = 540;
 
 
-
 const pose = new Pose({
 
-locateFile:(file)=>{
-
-return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
-
-}
+    locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+    }
 
 });
-
 
 
 pose.setOptions({
 
-modelComplexity:1,
+    modelComplexity: 1,
 
-smoothLandmarks:true,
+    smoothLandmarks: true,
 
-enableSegmentation:false,
+    enableSegmentation: false,
 
-minDetectionConfidence:0.5,
+    minDetectionConfidence: 0.5,
 
-minTrackingConfidence:0.5
+    minTrackingConfidence: 0.5
 
 });
 
 
 
+pose.onResults((results)=>{
 
 
-pose.onResults(results=>{
+    ctx.save();
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
 
 
-ctx.clearRect(
-0,
-0,
-canvas.width,
-canvas.height
-);
+    if(results.poseLandmarks){
 
 
-
-if(results.poseLandmarks){
-
-
-drawConnectors(
-
-ctx,
-
-results.poseLandmarks,
-
-POSE_CONNECTIONS,
-
-{
-color:"#00ff00",
-lineWidth:3
-}
-
-);
+        // DIBUJAR CONEXIONES DEL CUERPO
+        drawConnectors(
+            ctx,
+            results.poseLandmarks,
+            POSE_CONNECTIONS,
+            {
+                color:"#00FF00",
+                lineWidth:5
+            }
+        );
 
 
-
-drawLandmarks(
-
-ctx,
-
-results.poseLandmarks,
-
-{
-color:"#ff0000",
-radius:4
-}
-
-);
+        // DIBUJAR PUNTOS
+        drawLandmarks(
+            ctx,
+            results.poseLandmarks,
+            {
+                color:"#FF0000",
+                fillColor:"#FF0000",
+                radius:6
+            }
+        );
 
 
+        console.log(
+            "Puntos detectados:",
+            results.poseLandmarks.length
+        );
 
-}
 
+    }
+
+
+    ctx.restore();
 
 
 });
