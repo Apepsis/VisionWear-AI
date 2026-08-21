@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magic Fashion Mirror AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>✨ Magic Fashion Mirror AI</h1>
+<p>Espejo virtual de moda con inteligencia artificial</p>
+
+<video id="camera" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<div class="controls">
+<button id="capture">Capturar estilo</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="src/camera.js"></script>
+<script src="src/poseDetection.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
