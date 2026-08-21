@@ -1,7 +1,20 @@
-const video=document.getElementById('camera');
+const video = document.getElementById("camera");
 
-navigator.mediaDevices.getUserMedia({
-video:true
-}).then(stream=>{
-video.srcObject=stream;
+
+const camera = new Camera(video,{
+
+onFrame: async ()=>{
+
+await pose.send({
+image:video
 });
+
+},
+
+width:720,
+height:540
+
+});
+
+
+camera.start();
