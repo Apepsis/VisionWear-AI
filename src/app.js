@@ -1,5 +1,22 @@
-const capture=document.getElementById('capture');
+const button=document.getElementById("capture");
 
-capture.onclick=()=>{
-alert("Captura de estilo realizada");
+
+button.onclick=()=>{
+
+
+let image=document.createElement("a");
+
+
+image.download="neuralmirror-style.png";
+
+
+image.href=document
+.getElementById("canvas")
+.toDataURL();
+
+
+
+image.click();
+
+
 };
