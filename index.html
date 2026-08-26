@@ -3,13 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VisionWear AI - MIT Portfolio</title>
+    <title>VisionWear AI - Virtual Try-On</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="ui-overlay">
+        <div class="modal">
+            <h1>VisionWear AI</h1>
+            <p>Espejo virtual con estimación de postura en tiempo real.</p>
+            <button id="start-button">Permitir Cámara e Iniciar</button>
+            <div id="loading-indicator">Cargando modelos de IA y 3D...</div>
+            <div id="error-message"></div>
+        </div>
+    </div>
+
     <video id="webcam-video" autoplay playsinline muted></video>
     
-    <!-- Dependiendo de tu entorno (Webpack/Vite o vainilla), el type="module" es esencial -->
     <script type="module" src="src/app.js"></script>
 </body>
 </html>
+
