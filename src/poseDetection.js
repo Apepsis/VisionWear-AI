@@ -21,7 +21,8 @@ export class PoseEstimator {
         await tf.ready();
 
         const detectorConfig = {
-            modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+            modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+            enableSmoothing: true
         };
 
         this.detector = await poseDetection.createDetector(
@@ -56,13 +57,19 @@ export class PoseEstimator {
         });
     }
 
+    resetSmoothing() {
+        this.smoothedKeypoints = {};
+    }
+
     async estimatePose(videoElement) {
         if (!this.detector || !videoElement || videoElement.readyState < 2) {
             return null;
         }
 
+        // El video se refleja con CSS. Dejamos las coordenadas del modelo
+        // sin reflejar y hacemos una única conversión en app.js.
         const poses = await this.detector.estimatePoses(videoElement, {
-            flipHorizontal: true
+            flipHorizontal: false
         });
 
         if (poses.length > 0) {
@@ -71,5 +78,15 @@ export class PoseEstimator {
         }
 
         return null;
+    }
+
+    async estimateImage(imageElement) {
+        if (!this.detector || !imageElement) return null;
+
+        const poses = await this.detector.estimatePoses(imageElement, {
+            flipHorizontal: false
+        });
+
+        return poses.length > 0 ? poses[0] : null;
     }
 }
