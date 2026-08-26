@@ -1,67 +1,92 @@
-import { CameraManager } from './camera.js';
-import { PoseEstimator } from './poseDetection.js';
-import * as THREE from 'three';
-
-export class App {
-    constructor() {
-        this.cameraManager = new CameraManager('webcam-video');
-        this.poseEstimator = new PoseEstimator();
-        this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-        this.clothingMesh = null;
+export class CameraManager {
+    constructor(videoElementId) {
+        this.videoElement = document.getElementById(videoElementId);
+        this.stream = null;
     }
 
-    async start() {
-        const videoElement = await this.cameraManager.initialize();
-        await this.poseEstimator.initialize();
-        
-        this.setupRendering();
-        this.buildClothingMesh();
-        this.renderLoop(videoElement);
-    }
-
-    setupRendering() {
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setClearColor(0x000000, 0);
-        document.body.appendChild(this.renderer.domElement);
-        this.camera.position.z = 5;
-    }
-
-    buildClothingMesh() {
-        const geometry = new THREE.BoxGeometry(1.5, 2, 0.5);
-        const material = new THREE.MeshNormalMaterial({ wireframe: true });
-        this.clothingMesh = new THREE.Mesh(geometry, material);
-        this.scene.add(this.clothingMesh);
-    }
-
-    async renderLoop(videoElement) {
-        const pose = await this.poseEstimator.estimatePose(videoElement);
-        
-        if (pose && pose.keypoints) {
-            const leftShoulder = pose.keypoints.find(k => k.name === 'left_shoulder');
-            const rightShoulder = pose.keypoints.find(k => k.name === 'right_shoulder');
-            
-            if (leftShoulder?.score > 0.5 && rightShoulder?.score > 0.5) {
-                const midX = (leftShoulder.x + rightShoulder.x) / 2;
-                const midY = (leftShoulder.y + rightShoulder.y) / 2;
-                
-                const ndcX = (midX / videoElement.videoWidth) * 2 - 1;
-                const ndcY = -(midY / videoElement.videoHeight) * 2 + 1;
-                
-                this.clothingMesh.position.x = ndcX * 5;
-                this.clothingMesh.position.y = ndcY * 5;
-                
-                const shoulderDist = Math.abs(rightShoulder.x - leftShoulder.x);
-                const scale = shoulderDist / 100;
-                this.clothingMesh.scale.set(scale, scale, scale);
-            }
+    async initialize() {
+        if (!this.videoElement) {
+            throw new Error('No se encontró el elemento de video para la cámara.');
         }
 
-        this.renderer.render(this.scene, this.camera);
-        requestAnimationFrame(() => this.renderLoop(videoElement));
+        // getUserMedia solo funciona en contextos seguros: HTTPS o localhost.
+        const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+        if (!window.isSecureContext && !isLocalhost) {
+            throw new Error('La cámara requiere HTTPS o ejecutar la aplicación desde localhost.');
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('Este navegador no soporta navigator.mediaDevices.getUserMedia().');
+        }
+
+        // Si había una cámara activa, la detenemos antes de solicitar una nueva.
+        this.stop();
+
+        const constraints = {
+            video: {
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
+            audio: false
+        };
+
+        try {
+            // Esta llamada es la que hace que el navegador muestre el diálogo
+            // para permitir o bloquear el acceso a la cámara.
+            this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (error) {
+            const messages = {
+                NotAllowedError: 'Permiso de cámara denegado. Habilítalo desde la configuración del sitio.',
+                PermissionDeniedError: 'Permiso de cámara denegado. Habilítalo desde la configuración del sitio.',
+                NotFoundError: 'No se encontró ninguna cámara disponible.',
+                DevicesNotFoundError: 'No se encontró ninguna cámara disponible.',
+                NotReadableError: 'La cámara está siendo usada por otra aplicación o no puede abrirse.',
+                TrackStartError: 'La cámara está siendo usada por otra aplicación o no puede abrirse.',
+                OverconstrainedError: 'La cámara disponible no cumple con la configuración solicitada.',
+                SecurityError: 'El navegador bloqueó el acceso a la cámara por seguridad.'
+            };
+
+            throw new Error(messages[error.name] || `No se pudo abrir la cámara: ${error.message}`);
+        }
+
+        this.videoElement.srcObject = this.stream;
+        this.videoElement.autoplay = true;
+        this.videoElement.muted = true;
+        this.videoElement.playsInline = true;
+
+        if (this.videoElement.readyState < HTMLMediaElement.HAVE_METADATA) {
+            await new Promise((resolve, reject) => {
+                const onLoaded = () => {
+                    cleanup();
+                    resolve();
+                };
+                const onError = () => {
+                    cleanup();
+                    reject(new Error('No se pudo cargar el video de la cámara.'));
+                };
+                const cleanup = () => {
+                    this.videoElement.removeEventListener('loadedmetadata', onLoaded);
+                    this.videoElement.removeEventListener('error', onError);
+                };
+
+                this.videoElement.addEventListener('loadedmetadata', onLoaded, { once: true });
+                this.videoElement.addEventListener('error', onError, { once: true });
+            });
+        }
+
+        await this.videoElement.play();
+        return this.videoElement;
+    }
+
+    stop() {
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => track.stop());
+            this.stream = null;
+        }
+
+        if (this.videoElement && this.videoElement.srcObject) {
+            this.videoElement.srcObject = null;
+        }
     }
 }
-
-const app = new App();
-app.start();
