@@ -1,11 +1,10 @@
-import * as poseDetection from '@tensorflow-models/pose-detection';
-import '@tensorflow/tfjs-backend-webgl'; // Aceleración por hardware
+import * as poseDetection from 'https://esm.sh/@tensorflow-models/pose-detection';
+import 'https://esm.sh/@tensorflow/tfjs-backend-webgl'; 
 
 export class PoseEstimator {
     constructor() {
         this.detector = null;
         this.smoothedKeypoints = {};
-        // Factor de suavizado (0.0 a 1.0). Menor = más estable pero con retraso.
         this.alpha = 0.45; 
     }
 
@@ -25,7 +24,6 @@ export class PoseEstimator {
             if (!this.smoothedKeypoints[kp.name]) {
                 this.smoothedKeypoints[kp.name] = { x: kp.x, y: kp.y };
             } else {
-                // Aplicación del filtro de estabilización
                 this.smoothedKeypoints[kp.name].x = (this.alpha * kp.x) + ((1 - this.alpha) * this.smoothedKeypoints[kp.name].x);
                 this.smoothedKeypoints[kp.name].y = (this.alpha * kp.y) + ((1 - this.alpha) * this.smoothedKeypoints[kp.name].y);
             }
