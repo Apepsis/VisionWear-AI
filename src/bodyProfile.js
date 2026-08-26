@@ -61,7 +61,6 @@ export class BodyProfileAnalyzer {
         this.loadingPromise = (async () => {
             onProgress('Cargando segmentación corporal...');
             await this.loadScriptOnce(BODY_PIX_URL, 'bodyPix');
-
             onProgress('Inicializando BodyPix...');
             this.bodyPixNet = await globalThis.bodyPix.load({
                 architecture: 'MobileNetV1',
@@ -97,7 +96,6 @@ export class BodyProfileAnalyzer {
 
     async segment(image) {
         if (!this.bodyPixNet) throw new Error('BodyPix todavía no está inicializado.');
-
         return this.bodyPixNet.segmentPerson(image, {
             internalResolution: 'medium',
             segmentationThreshold: 0.68,
@@ -118,13 +116,12 @@ export class BodyProfileAnalyzer {
         for (let y = 0; y < height; y += 1) {
             const rowOffset = y * width;
             for (let x = 0; x < width; x += 1) {
-                if (data[rowOffset + x]) {
-                    pixels += 1;
-                    if (x < minX) minX = x;
-                    if (x > maxX) maxX = x;
-                    if (y < minY) minY = y;
-                    if (y > maxY) maxY = y;
-                }
+                if (!data[rowOffset + x]) continue;
+                pixels += 1;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
             }
         }
 
@@ -143,55 +140,74 @@ export class BodyProfileAnalyzer {
         };
     }
 
-    getRowSpan(segmentation, targetY, band = 4) {
-        const { data, width, height } = segmentation;
-        const yCenter = clamp(Math.round(targetY), 0, height - 1);
-        let bestSpan = null;
-
-        for (let y = Math.max(0, yCenter - band); y <= Math.min(height - 1, yCenter + band); y += 1) {
-            let minX = width;
-            let maxX = -1;
-            const rowOffset = y * width;
-
-            for (let x = 0; x < width; x += 1) {
-                if (data[rowOffset + x]) {
-                    if (x < minX) minX = x;
-                    if (x > maxX) maxX = x;
-                }
-            }
-
-            if (maxX >= minX) {
-                const span = maxX - minX + 1;
-                if (!bestSpan || span > bestSpan.width) {
-                    bestSpan = { minX, maxX, width: span, y };
-                }
-            }
-        }
-
-        return bestSpan;
-    }
-
     keypoint(pose, name, minScore = 0.25) {
         const point = pose?.keypoints?.find(item => item.name === name);
         return point && (point.score ?? 0) >= minScore ? point : null;
     }
 
-    lineYFromPose(pose, ratio = 0.3) {
+    torsoReference(pose, ratio = 0.3) {
         const shoulders = [
             this.keypoint(pose, 'left_shoulder'),
             this.keypoint(pose, 'right_shoulder')
         ].filter(Boolean);
-
         const hips = [
             this.keypoint(pose, 'left_hip'),
             this.keypoint(pose, 'right_hip')
         ].filter(Boolean);
 
+        const shoulderX = average(shoulders.map(point => point.x));
         const shoulderY = average(shoulders.map(point => point.y));
+        const hipX = average(hips.map(point => point.x));
         const hipY = average(hips.map(point => point.y));
 
-        if (!Number.isFinite(shoulderY) || !Number.isFinite(hipY)) return null;
-        return shoulderY + ((hipY - shoulderY) * ratio);
+        if (![shoulderX, shoulderY, hipX, hipY].every(Number.isFinite)) return null;
+        return {
+            x: shoulderX + ((hipX - shoulderX) * ratio),
+            y: shoulderY + ((hipY - shoulderY) * ratio)
+        };
+    }
+
+    getTorsoSpan(segmentation, targetY, targetX, band = 5) {
+        const { data, width, height } = segmentation;
+        const yCenter = clamp(Math.round(targetY), 0, height - 1);
+        const requestedX = clamp(Math.round(targetX), 0, width - 1);
+        let best = null;
+
+        for (let y = Math.max(0, yCenter - band); y <= Math.min(height - 1, yCenter + band); y += 1) {
+            const rowOffset = y * width;
+            let seed = requestedX;
+
+            if (!data[rowOffset + seed]) {
+                const searchRadius = Math.max(8, Math.round(width * 0.08));
+                let nearest = null;
+                for (let offset = 1; offset <= searchRadius; offset += 1) {
+                    const left = requestedX - offset;
+                    const right = requestedX + offset;
+                    if (left >= 0 && data[rowOffset + left]) {
+                        nearest = left;
+                        break;
+                    }
+                    if (right < width && data[rowOffset + right]) {
+                        nearest = right;
+                        break;
+                    }
+                }
+                if (nearest === null) continue;
+                seed = nearest;
+            }
+
+            let minX = seed;
+            let maxX = seed;
+            while (minX > 0 && data[rowOffset + minX - 1]) minX -= 1;
+            while (maxX < width - 1 && data[rowOffset + maxX + 1]) maxX += 1;
+
+            const span = maxX - minX + 1;
+            if (!best || span > best.width) {
+                best = { minX, maxX, width: span, y };
+            }
+        }
+
+        return best;
     }
 
     ellipseCircumference(width, depth) {
@@ -206,42 +222,68 @@ export class BodyProfileAnalyzer {
         const bottomMargin = (image.naturalHeight - 1 - bounds.maxY) / image.naturalHeight;
 
         if (topMargin < 0.01 || bottomMargin < 0.01) {
-            warnings.push(`${label}: la persona parece tocar el borde superior/inferior. La altura puede estar recortada.`);
+            warnings.push(`${label}: el cuerpo parece tocar el borde superior/inferior; la escala por altura puede ser menos precisa.`);
         }
-
         if ((bounds.height / image.naturalHeight) < 0.55) {
-            warnings.push(`${label}: la persona ocupa poco espacio en la imagen; la medición será menos estable.`);
+            warnings.push(`${label}: la persona ocupa poco espacio en la imagen; acércate o usa una imagen con mayor resolución.`);
         }
-
         return warnings;
     }
 
-    async analyze({ frontFile, sideFile, heightCm, onProgress = () => {} }) {
+    measureView({ image, pose, segmentation, heightCm, label }) {
+        const bounds = this.getMaskBounds(segmentation);
+        const cmPerPx = heightCm / bounds.height;
+        const chestRef = this.torsoReference(pose, 0.30);
+        const waistRef = this.torsoReference(pose, 0.74);
+
+        if (!chestRef || !waistRef) {
+            throw new Error(`${label}: no se pudieron ubicar hombros/caderas con suficiente confianza.`);
+        }
+
+        const chestSpan = this.getTorsoSpan(segmentation, chestRef.y, chestRef.x, 5);
+        const waistSpan = this.getTorsoSpan(segmentation, waistRef.y, waistRef.x, 5);
+        if (!chestSpan || !waistSpan) {
+            throw new Error(`${label}: la silueta del torso no fue suficientemente clara.`);
+        }
+
+        return {
+            bounds,
+            cmPerPx,
+            chestWidthCm: chestSpan.width * cmPerPx,
+            waistWidthCm: waistSpan.width * cmPerPx,
+            warnings: this.qualityWarnings(image, bounds, label)
+        };
+    }
+
+    async analyze({ frontFile, sideFile, backFile = null, heightCm, onProgress = () => {} }) {
         const numericHeight = Number(heightCm);
         if (!Number.isFinite(numericHeight) || numericHeight < 120 || numericHeight > 230) {
             throw new Error('Ingresa una altura válida entre 120 y 230 cm.');
         }
-
         if (!frontFile || !sideFile) {
-            throw new Error('Necesito una imagen frontal y una imagen lateral.');
+            throw new Error('Necesito al menos una imagen frontal y una imagen lateral.');
         }
 
         await this.initialize(onProgress);
-
         onProgress('Leyendo imágenes...');
-        const [frontImage, sideImage] = await Promise.all([
-            this.fileToImage(frontFile),
-            this.fileToImage(sideFile)
+
+        const frontImagePromise = this.fileToImage(frontFile);
+        const sideImagePromise = this.fileToImage(sideFile);
+        const backImagePromise = backFile ? this.fileToImage(backFile) : Promise.resolve(null);
+        const [frontImage, sideImage, backImage] = await Promise.all([
+            frontImagePromise,
+            sideImagePromise,
+            backImagePromise
         ]);
 
-        onProgress('Detectando postura frontal y lateral...');
-        const [frontPose, sidePose] = await Promise.all([
-            this.poseEstimator.estimateImage(frontImage),
-            this.poseEstimator.estimateImage(sideImage)
-        ]);
+        onProgress('Detectando postura en las vistas...');
+        const frontPose = await this.poseEstimator.estimateImage(frontImage);
+        const sidePose = await this.poseEstimator.estimateImage(sideImage);
+        const backPose = backImage ? await this.poseEstimator.estimateImage(backImage) : null;
 
-        if (!frontPose) throw new Error('No se detectó una persona completa en la foto frontal.');
-        if (!sidePose) throw new Error('No se detectó una persona completa en la foto lateral.');
+        if (!frontPose) throw new Error('No se detectó una persona clara en la foto frontal.');
+        if (!sidePose) throw new Error('No se detectó una persona clara en la foto lateral.');
+        if (backImage && !backPose) throw new Error('No se detectó una persona clara en la foto posterior.');
 
         const leftShoulder = this.keypoint(frontPose, 'left_shoulder', 0.35);
         const rightShoulder = this.keypoint(frontPose, 'right_shoulder', 0.35);
@@ -252,18 +294,34 @@ export class BodyProfileAnalyzer {
             throw new Error('La foto frontal debe mostrar claramente hombros y caderas.');
         }
 
-        onProgress('Segmentando la silueta corporal...');
-        const [frontSegmentation, sideSegmentation] = await Promise.all([
-            this.segment(frontImage),
-            this.segment(sideImage)
-        ]);
+        onProgress('Segmentando las siluetas...');
+        const frontSegmentation = await this.segment(frontImage);
+        const sideSegmentation = await this.segment(sideImage);
+        const backSegmentation = backImage ? await this.segment(backImage) : null;
 
-        const frontBounds = this.getMaskBounds(frontSegmentation);
-        const sideBounds = this.getMaskBounds(sideSegmentation);
-        const cmPerPxFront = numericHeight / frontBounds.height;
-        const cmPerPxSide = numericHeight / sideBounds.height;
+        const frontView = this.measureView({
+            image: frontImage,
+            pose: frontPose,
+            segmentation: frontSegmentation,
+            heightCm: numericHeight,
+            label: 'Frontal'
+        });
+        const sideView = this.measureView({
+            image: sideImage,
+            pose: sidePose,
+            segmentation: sideSegmentation,
+            heightCm: numericHeight,
+            label: 'Lateral'
+        });
+        const backView = backImage ? this.measureView({
+            image: backImage,
+            pose: backPose,
+            segmentation: backSegmentation,
+            heightCm: numericHeight,
+            label: 'Posterior'
+        }) : null;
 
-        const shoulderWidthCm = distance(leftShoulder, rightShoulder) * cmPerPxFront;
+        const shoulderWidthCm = distance(leftShoulder, rightShoulder) * frontView.cmPerPx;
         const shoulderMid = {
             x: (leftShoulder.x + rightShoulder.x) / 2,
             y: (leftShoulder.y + rightShoulder.y) / 2
@@ -272,66 +330,57 @@ export class BodyProfileAnalyzer {
             x: (leftHip.x + rightHip.x) / 2,
             y: (leftHip.y + rightHip.y) / 2
         };
-        const torsoLengthCm = distance(shoulderMid, hipMid) * cmPerPxFront;
+        const torsoLengthCm = distance(shoulderMid, hipMid) * frontView.cmPerPx;
 
-        const frontChestY = this.lineYFromPose(frontPose, 0.30);
-        const frontWaistY = this.lineYFromPose(frontPose, 0.74);
-        const sideChestY = this.lineYFromPose(sidePose, 0.30);
-        const sideWaistY = this.lineYFromPose(sidePose, 0.74);
-
-        if (![frontChestY, frontWaistY, sideChestY, sideWaistY].every(Number.isFinite)) {
-            throw new Error('No se pudieron ubicar pecho/cintura. Usa fotos donde el torso sea completamente visible.');
-        }
-
-        const frontChestSpan = this.getRowSpan(frontSegmentation, frontChestY, 5);
-        const frontWaistSpan = this.getRowSpan(frontSegmentation, frontWaistY, 5);
-        const sideChestSpan = this.getRowSpan(sideSegmentation, sideChestY, 5);
-        const sideWaistSpan = this.getRowSpan(sideSegmentation, sideWaistY, 5);
-
-        if (!frontChestSpan || !frontWaistSpan || !sideChestSpan || !sideWaistSpan) {
-            throw new Error('La silueta no fue suficientemente clara para medir pecho y cintura.');
-        }
-
-        const chestFrontWidthCm = frontChestSpan.width * cmPerPxFront;
-        const waistFrontWidthCm = frontWaistSpan.width * cmPerPxFront;
-        const chestDepthCm = sideChestSpan.width * cmPerPxSide;
-        const waistDepthCm = sideWaistSpan.width * cmPerPxSide;
-        const chestCircumferenceCm = this.ellipseCircumference(chestFrontWidthCm, chestDepthCm);
-        const waistCircumferenceCm = this.ellipseCircumference(waistFrontWidthCm, waistDepthCm);
+        const chestWidthCm = average([
+            frontView.chestWidthCm,
+            backView?.chestWidthCm
+        ]);
+        const waistWidthCm = average([
+            frontView.waistWidthCm,
+            backView?.waistWidthCm
+        ]);
+        const chestDepthCm = sideView.chestWidthCm;
+        const waistDepthCm = sideView.waistWidthCm;
+        const chestCircumferenceCm = this.ellipseCircumference(chestWidthCm, chestDepthCm);
+        const waistCircumferenceCm = this.ellipseCircumference(waistWidthCm, waistDepthCm);
 
         const confidencePoints = [leftShoulder, rightShoulder, leftHip, rightHip];
         const poseConfidence = average(confidencePoints.map(point => point.score ?? 0)) ?? 0;
         const warnings = [
-            ...this.qualityWarnings(frontImage, frontBounds, 'Frontal'),
-            ...this.qualityWarnings(sideImage, sideBounds, 'Lateral')
+            ...frontView.warnings,
+            ...sideView.warnings,
+            ...(backView?.warnings || [])
         ];
 
         const profile = {
-            version: 1,
+            version: 2,
             createdAt: new Date().toISOString(),
-            source: 'front+side+height',
+            source: backView ? 'front+side+back+height' : 'front+side+height',
             heightCm: round(numericHeight, 1),
             measurements: {
                 shoulderWidthCm: round(shoulderWidthCm),
                 torsoLengthCm: round(torsoLengthCm),
-                chestFrontWidthCm: round(chestFrontWidthCm),
+                chestFrontWidthCm: round(chestWidthCm),
+                chestBackWidthCm: backView ? round(backView.chestWidthCm) : null,
                 chestDepthCm: round(chestDepthCm),
                 chestCircumferenceCm: round(chestCircumferenceCm),
-                waistFrontWidthCm: round(waistFrontWidthCm),
+                waistFrontWidthCm: round(waistWidthCm),
+                waistBackWidthCm: backView ? round(backView.waistWidthCm) : null,
                 waistDepthCm: round(waistDepthCm),
                 waistCircumferenceCm: round(waistCircumferenceCm)
             },
             ratios: {
-                chestToShoulder: round(chestFrontWidthCm / Math.max(shoulderWidthCm, 1), 3),
-                waistToChest: round(waistFrontWidthCm / Math.max(chestFrontWidthCm, 1), 3),
+                chestToShoulder: round(chestWidthCm / Math.max(shoulderWidthCm, 1), 3),
+                waistToChest: round(waistWidthCm / Math.max(chestWidthCm, 1), 3),
                 torsoToShoulder: round(torsoLengthCm / Math.max(shoulderWidthCm, 1), 3),
-                depthToChestWidth: round(chestDepthCm / Math.max(chestFrontWidthCm, 1), 3)
+                depthToChestWidth: round(chestDepthCm / Math.max(chestWidthCm, 1), 3)
             },
             confidence: round(clamp(poseConfidence, 0, 1), 2),
             warnings
         };
 
-        onProgress('Perfil corporal estimado.');
+        onProgress('Perfil corporal estimado y listo para el try-on.');
         return profile;
     }
 }
