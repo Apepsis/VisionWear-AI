@@ -1,31 +1,8 @@
 import { CameraManager } from './camera.js';
 import { PoseEstimator } from './poseDetection.js';
-import * as THREE from 'https://esm.sh/three](https://esm.sh/three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-// Al final de src/app.js, reemplaza "app.start();" con esto:
 
-const app = new App();
-const startButton = document.getElementById('start-button');
-const uiOverlay = document.getElementById('ui-overlay');
-const loadingIndicator = document.getElementById('loading-indicator');
-const errorMessage = document.getElementById('error-message');
-
-startButton.addEventListener('click', async () => {
-    startButton.style.display = 'none';
-    loadingIndicator.style.display = 'block';
-    
-    try {
-        await app.start();
-        uiOverlay.style.opacity = '0';
-        setTimeout(() => uiOverlay.style.display = 'none', 500);
-    } catch (error) {
-        loadingIndicator.style.display = 'none';
-        errorMessage.style.display = 'block';
-        errorMessage.innerText = "Error: Verifica tu cámara e inténtalo de nuevo.";
-        startButton.style.display = 'inline-block';
-    }
-});
+import * as THREE from 'https://esm.sh/three';
 
 export class App {
     constructor() {
@@ -42,7 +19,7 @@ export class App {
         await this.poseEstimator.initialize();
         
         this.setupRendering();
-        this.loadClothingModel();
+        this.buildMockClothing(); 
         this.renderLoop(videoElement);
     }
 
@@ -51,26 +28,16 @@ export class App {
         this.renderer.setClearColor(0x000000, 0);
         document.body.appendChild(this.renderer.domElement);
         this.camera.position.z = 5;
-
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
-        this.scene.add(ambientLight);
-
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(0, 10, 5);
-        this.scene.add(directionalLight);
     }
 
-    loadClothingModel() {
-        const loader = new GLTFLoader();
-        loader.load(
-            'assets/shirt.glb',
-            (gltf) => {
-                this.clothingModel = gltf.scene;
-                this.scene.add(this.clothingModel);
-            },
-            undefined,
-            (error) => console.error(error)
-        );
+    buildMockClothing() {
+        // 1. Creamos la geometría de una caja (Box) que simulará ser el torso
+        const geometry = new THREE.BoxGeometry(1.5, 2, 0.5);
+        // 2. Le aplicamos un material "Normal" que genera colores brillantes y formato de malla (wireframe)
+        const material = new THREE.MeshNormalMaterial({ wireframe: true });
+        
+        this.clothingModel = new THREE.Mesh(geometry, material);
+        this.scene.add(this.clothingModel);
     }
 
     async renderLoop(videoElement) {
@@ -101,5 +68,27 @@ export class App {
     }
 }
 
+// Inicialización de la Interfaz y el Botón
 const app = new App();
-app.start();
+const startButton = document.getElementById('start-button');
+const uiOverlay = document.getElementById('ui-overlay');
+const loadingIndicator = document.getElementById('loading-indicator');
+const errorMessage = document.getElementById('error-message');
+
+startButton.addEventListener('click', async () => {
+    startButton.style.display = 'none';
+    loadingIndicator.style.display = 'block';
+    errorMessage.style.display = 'none';
+    
+    try {
+        await app.start();
+        uiOverlay.style.opacity = '0';
+        setTimeout(() => uiOverlay.style.display = 'none', 500);
+    } catch (error) {
+        console.error(error);
+        loadingIndicator.style.display = 'none';
+        errorMessage.style.display = 'block';
+        errorMessage.innerText = "Error: Verifica tu cámara o la consola (F12).";
+        startButton.style.display = 'inline-block';
+    }
+});
