@@ -3,6 +3,30 @@ import { PoseEstimator } from './poseDetection.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
+// Al final de src/app.js, reemplaza "app.start();" con esto:
+
+const app = new App();
+const startButton = document.getElementById('start-button');
+const uiOverlay = document.getElementById('ui-overlay');
+const loadingIndicator = document.getElementById('loading-indicator');
+const errorMessage = document.getElementById('error-message');
+
+startButton.addEventListener('click', async () => {
+    startButton.style.display = 'none';
+    loadingIndicator.style.display = 'block';
+    
+    try {
+        await app.start();
+        uiOverlay.style.opacity = '0';
+        setTimeout(() => uiOverlay.style.display = 'none', 500);
+    } catch (error) {
+        loadingIndicator.style.display = 'none';
+        errorMessage.style.display = 'block';
+        errorMessage.innerText = "Error: Verifica tu cámara e inténtalo de nuevo.";
+        startButton.style.display = 'inline-block';
+    }
+});
+
 export class App {
     constructor() {
         this.cameraManager = new CameraManager('webcam-video');
