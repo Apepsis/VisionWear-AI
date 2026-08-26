@@ -1,6 +1,7 @@
 import { CameraManager } from './camera.js';
 import { PoseEstimator } from './poseDetection.js';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export class App {
     constructor() {
@@ -9,7 +10,7 @@ export class App {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-        this.clothingMesh = null;
+        this.clothingModel = null;
     }
 
     async start() {
@@ -17,7 +18,7 @@ export class App {
         await this.poseEstimator.initialize();
         
         this.setupRendering();
-        this.buildClothingMesh();
+        this.loadClothingModel();
         this.renderLoop(videoElement);
     }
 
@@ -26,19 +27,32 @@ export class App {
         this.renderer.setClearColor(0x000000, 0);
         document.body.appendChild(this.renderer.domElement);
         this.camera.position.z = 5;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+        this.scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(0, 10, 5);
+        this.scene.add(directionalLight);
     }
 
-    buildClothingMesh() {
-        const geometry = new THREE.BoxGeometry(1.5, 2, 0.5);
-        const material = new THREE.MeshNormalMaterial({ wireframe: true });
-        this.clothingMesh = new THREE.Mesh(geometry, material);
-        this.scene.add(this.clothingMesh);
+    loadClothingModel() {
+        const loader = new GLTFLoader();
+        loader.load(
+            'assets/shirt.glb',
+            (gltf) => {
+                this.clothingModel = gltf.scene;
+                this.scene.add(this.clothingModel);
+            },
+            undefined,
+            (error) => console.error(error)
+        );
     }
 
     async renderLoop(videoElement) {
         const pose = await this.poseEstimator.estimatePose(videoElement);
         
-        if (pose && pose.keypoints) {
+        if (pose && pose.keypoints && this.clothingModel) {
             const leftShoulder = pose.keypoints.find(k => k.name === 'left_shoulder');
             const rightShoulder = pose.keypoints.find(k => k.name === 'right_shoulder');
             
@@ -49,12 +63,12 @@ export class App {
                 const ndcX = (midX / videoElement.videoWidth) * 2 - 1;
                 const ndcY = -(midY / videoElement.videoHeight) * 2 + 1;
                 
-                this.clothingMesh.position.x = ndcX * 5;
-                this.clothingMesh.position.y = ndcY * 5;
+                this.clothingModel.position.x = ndcX * 5;
+                this.clothingModel.position.y = ndcY * 5;
                 
                 const shoulderDist = Math.abs(rightShoulder.x - leftShoulder.x);
-                const scale = shoulderDist / 100;
-                this.clothingMesh.scale.set(scale, scale, scale);
+                const scale = (shoulderDist / 100) * 1.5;
+                this.clothingModel.scale.set(scale, scale, scale);
             }
         }
 
