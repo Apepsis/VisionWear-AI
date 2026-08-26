@@ -1,6 +1,6 @@
 import { CameraManager } from './camera.js';
 import { PoseEstimator } from './poseDetection.js';
-import * as THREE from 'three';
+import * as THREE from '[https://esm.sh/three](https://esm.sh/three)';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // Al final de src/app.js, reemplaza "app.start();" con esto:
