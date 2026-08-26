@@ -1,40 +1,15 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>NeuralMirror AI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisionWear AI - MIT Portfolio</title>
     <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-
-<h1>✨ NeuralMirror AI</h1>
-<p>AI-powered virtual fashion mirror</p>
-
-<div class="container">
-
-    <video id="camera" autoplay playsinline></video>
-
-    <canvas id="canvas"></canvas>
-
-</div>
-
-<button id="capture">
-Capture Style
-</button>
-
-
-<!-- MediaPipe -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
-
-<script src="src/camera.js"></script>
-<script src="src/poseDetection.js"></script>
-<script src="src/app.js"></script>
-
+    <video id="webcam-video" autoplay playsinline muted></video>
+    
+    <!-- Dependiendo de tu entorno (Webpack/Vite o vainilla), el type="module" es esencial -->
+    <script type="module" src="src/app.js"></script>
 </body>
 </html>
