@@ -1,6 +1,3 @@
-import * as tf from 'https://esm.sh/@tensorflow/tfjs@4.22.0';
-import * as poseDetection from 'https://esm.sh/@tensorflow-models/pose-detection@2.1.3';
-
 export class PoseEstimator {
     constructor() {
         this.detector = null;
@@ -9,6 +6,17 @@ export class PoseEstimator {
     }
 
     async initialize() {
+        const tf = globalThis.tf;
+        const poseDetection = globalThis.poseDetection;
+
+        if (!tf) {
+            throw new Error('TensorFlow.js no se cargó correctamente.');
+        }
+
+        if (!poseDetection) {
+            throw new Error('MoveNet / pose-detection no se cargó correctamente.');
+        }
+
         await tf.setBackend('webgl');
         await tf.ready();
 
@@ -26,6 +34,8 @@ export class PoseEstimator {
 
     smoothKeypoints(keypoints) {
         return keypoints.map(kp => {
+            if (!kp.name) return kp;
+
             if (!this.smoothedKeypoints[kp.name]) {
                 this.smoothedKeypoints[kp.name] = { x: kp.x, y: kp.y };
             } else {
@@ -51,7 +61,9 @@ export class PoseEstimator {
             return null;
         }
 
-        const poses = await this.detector.estimatePoses(videoElement);
+        const poses = await this.detector.estimatePoses(videoElement, {
+            flipHorizontal: true
+        });
 
         if (poses.length > 0) {
             const smoothed = this.smoothKeypoints(poses[0].keypoints);
