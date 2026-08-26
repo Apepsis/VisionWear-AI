@@ -11,26 +11,6 @@ export class App {
         this.clothingModel = null;
     }
 
-    async start() {
-        // IMPORTANTE: pedir acceso a la cámara primero.
-        // Así un error al cargar TensorFlow/Three.js no impide que Chrome
-        // muestre el diálogo de permiso.
-        const videoElement = await this.cameraManager.initialize();
-
-        const [{ PoseEstimator }, THREE] = await Promise.all([
-            import('./poseDetection.js'),
-            import('https://esm.sh/three@0.180.0')
-        ]);
-
-        this.THREE = THREE;
-        this.poseEstimator = new PoseEstimator();
-
-        this.setupRendering();
-        this.buildMockClothing();
-        await this.poseEstimator.initialize();
-        this.renderLoop(videoElement);
-    }
-
     setupRendering() {
         const THREE = this.THREE;
 
@@ -41,8 +21,13 @@ export class App {
             0.1,
             1000
         );
-        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 
+        this.renderer = new THREE.WebGLRenderer({
+            alpha: true,
+            antialias: true
+        });
+
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setClearColor(0x000000, 0);
         this.renderer.domElement.id = 'three-overlay';
@@ -63,7 +48,7 @@ export class App {
         try {
             const pose = await this.poseEstimator.estimatePose(videoElement);
 
-            if (pose && pose.keypoints && this.clothingModel) {
+            if (pose?.keypoints && this.clothingModel) {
                 const leftShoulder = pose.keypoints.find(k => k.name === 'left_shoulder');
                 const rightShoulder = pose.keypoints.find(k => k.name === 'right_shoulder');
 
@@ -78,7 +63,7 @@ export class App {
                     this.clothingModel.position.y = ndcY * 5;
 
                     const shoulderDist = Math.abs(rightShoulder.x - leftShoulder.x);
-                    const scale = (shoulderDist / 100) * 1.5;
+                    const scale = Math.max((shoulderDist / 100) * 1.5, 0.1);
                     this.clothingModel.scale.set(scale, scale, scale);
                 }
             }
@@ -110,23 +95,27 @@ if (!startButton) {
         errorMessage.style.display = 'none';
 
         try {
+            // Primero solicitamos la cámara para que el navegador muestre el permiso.
             await app.cameraManager.initialize();
 
-            // En este punto Chrome ya tuvo que pedir/validar el permiso.
-            loadingIndicator.textContent = 'Cámara activa. Cargando modelos de IA y 3D...';
+            loadingIndicator.textContent = 'Cámara activa. Cargando detector de postura...';
+            const { PoseEstimator } = await import('./poseDetection.js?v=6');
 
-            const [{ PoseEstimator }, THREE] = await Promise.all([
-                import('./poseDetection.js'),
-                import('https://esm.sh/three@0.180.0')
-            ]);
+            loadingIndicator.textContent = 'Cargando motor 3D...';
+            const THREE = await import('https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js');
 
             app.THREE = THREE;
             app.poseEstimator = new PoseEstimator();
+
             app.setupRendering();
             app.buildMockClothing();
+
+            loadingIndicator.textContent = 'Inicializando MoveNet...';
             await app.poseEstimator.initialize();
+
             app.renderLoop(app.cameraManager.videoElement);
 
+            loadingIndicator.textContent = 'VisionWear listo.';
             uiOverlay.style.opacity = '0';
             setTimeout(() => {
                 uiOverlay.style.display = 'none';
@@ -135,7 +124,7 @@ if (!startButton) {
             console.error('Error al iniciar VisionWear:', error);
             loadingIndicator.style.display = 'none';
             errorMessage.style.display = 'block';
-            errorMessage.innerText = error?.message || 'No se pudo iniciar VisionWear.';
+            errorMessage.innerText = error?.message || String(error) || 'No se pudo iniciar VisionWear.';
             startButton.disabled = false;
             startButton.textContent = 'Permitir Cámara e Iniciar';
         }
